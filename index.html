@@ -2,45 +2,41 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Galpão AR - Travimo</title>
+    <title>Galpão AR</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #222; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
         
         #ui-container {
-            position: absolute; bottom: 20px; width: 100%; text-align: center; z-index: 100;
-            pointer-events: none; /* Deixa clicar no botão AR */
+            position: absolute; bottom: 30px; width: 100%; text-align: center; z-index: 100;
+            pointer-events: none;
         }
 
         #controls {
-            background: rgba(0,0,0,0.6); padding: 15px; border-radius: 20px;
-            display: inline-block; pointer-events: auto; /* Reativa cliques */
-            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 20px;
+            display: inline-block; pointer-events: auto;
+            border: 1px solid white;
         }
 
-        label { color: white; font-size: 14px; display: block; margin-bottom: 5px; font-weight: bold; }
-        
-        input[type=range] {
-            width: 200px; accent-color: #00b894;
-        }
-
-        #scale-val { color: #00b894; font-weight: bold; margin-left: 5px; }
+        label { color: #00b894; font-size: 16px; display: block; margin-bottom: 10px; font-weight: bold; }
+        input[type=range] { width: 200px; height: 20px; }
 
         #info {
-            position: absolute; top: 10px; width: 100%; text-align: center; color: rgba(255,255,255,0.7); 
-            font-size: 12px; pointer-events: none;
+            position: absolute; top: 0; width: 100%; padding: 10px;
+            background: rgba(0,0,0,0.5); color: white; text-align: center; font-size: 14px;
         }
     </style>
 </head>
 <body>
 
     <div id="info">
-        Galpão Industrial - Travimo AR<br>Aponte para o chão e inicie
+        1. Se ver o galpão girando, clique em <b>START AR</b> lá embaixo.<br>
+        2. No iPhone (WebXR Viewer), aponte para o chão.
     </div>
 
     <div id="ui-container">
         <div id="controls">
-            <label>Tamanho da Obra: <span id="scale-val">10% (Mesa)</span></label>
+            <label>Tamanho: <span id="scale-val">10%</span></label>
             <input type="range" id="scale-slider" min="0.05" max="1.0" step="0.05" value="0.1">
         </div>
     </div>
@@ -57,10 +53,11 @@
     <script type="module">
         import * as THREE from 'three';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let container;
-        let camera, scene, renderer;
-        let shedGroup; // Grupo para controlar a escala
+        let camera, scene, renderer, controls;
+        let shedGroup;
 
         init();
         animate();
@@ -70,17 +67,24 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
+            // Fundo AZUL ESCURO para saber que carregou
+            scene.background = new THREE.Color(0x1e272e);
 
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+            camera.position.set(3, 3, 5); // Câmera afastada e elevada
 
-            // Luzes
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-            hemisphereLight.position.set(0.5, 1, 0.25);
-            scene.add(hemisphereLight);
+            // Luzes Fortes
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+            hemiLight.position.set(0, 20, 0);
+            scene.add(hemiLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 3);
-            dirLight.position.set(0, 10, 5);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+            dirLight.position.set(5, 10, 7);
             scene.add(dirLight);
+
+            // Grid no chão para referência
+            const gridHelper = new THREE.GridHelper(10, 10);
+            scene.add(gridHelper);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -88,37 +92,54 @@
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            document.body.appendChild(ARButton.createButton(renderer));
+            // BOTÃO AR
+            const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } });
+            arBtn.style.bottom = "120px"; // Levanta o botão para não ficar embaixo do slider
+            arBtn.style.padding = "15px 30px";
+            arBtn.style.fontWeight = "bold";
+            arBtn.style.backgroundColor = "white";
+            arBtn.style.color = "black";
+            document.body.appendChild(arBtn);
 
-            // --- CONSTRUÇÃO ---
-            buildShed();
-
-            // --- CONTROLE DE ESCALA ---
-            const slider = document.getElementById('scale-slider');
-            const label = document.getElementById('scale-val');
-            
-            slider.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                // Atualiza o tamanho do galpão
-                if(shedGroup) shedGroup.scale.set(val, val, val);
-                
-                // Atualiza o texto
-                if(val >= 1.0) label.innerText = "100% (Tamanho Real)";
-                else if (val <= 0.1) label.innerText = `${(val*100).toFixed(0)}% (Mesa)`;
-                else label.innerText = `${(val*100).toFixed(0)}%`;
+            arBtn.addEventListener('click', () => {
+                // Quando entrar no AR:
+                scene.background = null; // Fundo transparente (câmera real)
+                gridHelper.visible = false; // Esconde o grid
+                shedGroup.position.set(0, -1, -2); // Joga 2 metros pra frente
+                shedGroup.scale.set(0.1, 0.1, 0.1); // Começa pequeno
+                controls.autoRotate = false; // Para de girar
             });
 
-            // Seta escala inicial (10% - Mesa)
-            shedGroup.scale.set(0.1, 0.1, 0.1);
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = true; // GIRA SOZINHO PARA VOCÊ VER
+            controls.target.set(0, 1, 0);
+
+            buildShed();
+
+            // Slider de Escala
+            const slider = document.getElementById('scale-slider');
+            const label = document.getElementById('scale-val');
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if(shedGroup) shedGroup.scale.set(val, val, val);
+                label.innerText = `${(val*100).toFixed(0)}%`;
+            });
+            shedGroup.scale.set(0.1, 0.1, 0.1); // Inicia escala 10%
 
             window.addEventListener('resize', onWindowResize);
         }
 
         function buildShed() {
             shedGroup = new THREE.Group();
-            // Posição inicial: 1 metro pra frente, no chão
-            shedGroup.position.set(0, 0, -1); 
             scene.add(shedGroup);
+
+            // Cria um cubo central vermelho para referência (se não vir o galpão, verá isso)
+            const boxGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const boxMat = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
+            const centerBox = new THREE.Mesh(boxGeo, boxMat);
+            centerBox.position.y = 0.25;
+            shedGroup.add(centerBox);
 
             // Algoritmo do Galpão
             const numBays = 3; const bayLen = 5.0; const shedW = 10.0; const colH = 4.0; const roofH = 1.5;
@@ -128,7 +149,7 @@
                 const geometry = new THREE.BoxGeometry(w, h, d);
                 const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.2 });
                 const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.set(x, y, z);
+                mesh.position.set(x - shedW/2, y, z - (numBays*bayLen)/2);
                 if (rotZ) mesh.rotation.z = rotZ;
                 shedGroup.add(mesh);
             };
@@ -137,13 +158,10 @@
 
             for (let i = 0; i <= numBays; i++) {
                 const z = i * bayLen;
-                // Bases
                 createPart(0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE);
                 createPart(0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE);
-                // Pilares
                 createPart(0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR);
                 createPart(0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR);
-                // Vigas
                 const rX = halfSpan / 2; const rY = colH + (roofH / 2);
                 createPart(rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA);
                 createPart(rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA);
@@ -168,6 +186,7 @@
         }
 
         function render() {
+            if(controls) controls.update();
             renderer.render(scene, camera);
         }
     </script>
