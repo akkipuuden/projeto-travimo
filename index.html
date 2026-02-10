@@ -2,42 +2,79 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Galpão AR</title>
+    <title>Travimo AR - Verificação</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
         
-        #ui-container {
-            position: absolute; bottom: 30px; width: 100%; text-align: center; z-index: 100;
-            pointer-events: none;
+        /* UI GERAL */
+        .ui-layer { position: absolute; z-index: 100; pointer-events: none; width: 100%; height: 100%; top: 0; left: 0; }
+        .interactive { pointer-events: auto; }
+
+        /* MENSAGEM TOPO */
+        #info-msg {
+            position: absolute; top: 20px; width: 100%; text-align: center; 
+            color: rgba(255,255,255,0.8); font-size: 14px; text-shadow: 1px 1px 2px black;
         }
 
-        #controls {
-            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 20px;
-            display: inline-block; pointer-events: auto;
-            border: 1px solid white;
+        /* CARD DE PROPRIEDADES (BIM) */
+        #prop-card {
+            position: absolute; bottom: 20px; left: 5%; width: 90%; 
+            background: rgba(15, 23, 42, 0.95); border-left: 4px solid #00b894;
+            border-radius: 8px; padding: 15px; box-sizing: border-box;
+            display: none; box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease;
         }
+        .prop-title { color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+        .prop-detail { color: #00b894; font-size: 14px; font-family: monospace; margin-bottom: 5px; }
+        .prop-meta { color: #94a3b8; font-size: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .close-prop { position: absolute; top: 10px; right: 10px; color: #fff; background: none; border: none; font-size: 20px; }
 
-        label { color: #00b894; font-size: 16px; display: block; margin-bottom: 10px; font-weight: bold; }
-        input[type=range] { width: 200px; height: 20px; }
-
-        #info {
-            position: absolute; top: 0; width: 100%; padding: 10px;
-            background: rgba(0,0,0,0.5); color: white; text-align: center; font-size: 14px;
+        /* MENU DE AJUSTE (MOVER/GIRAR) */
+        #adjust-panel {
+            position: absolute; bottom: 100px; width: 100%; text-align: center;
+            display: none; /* Escondido por padrão */
         }
+        .control-box {
+            display: inline-block; background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        input[type=range] { vertical-align: middle; accent-color: #e17055; width: 150px; }
+        .label-rot { color: white; font-size: 12px; margin-right: 10px; }
+
+        /* BOTÕES DE MODO */
+        #mode-toggle {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0,0,0,0.6); color: white; border: 1px solid white;
+            padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 12px;
+        }
+        #mode-toggle.active { background: #e17055; border-color: #e17055; }
+
     </style>
 </head>
 <body>
 
-    <div id="info">
-        1. Se ver o galpão girando, clique em <b>START AR</b> lá embaixo.<br>
-        2. No iPhone (WebXR Viewer), aponte para o chão.
-    </div>
+    <div class="ui-layer">
+        <div id="info-msg">Aponte para o chão e clique em START AR</div>
+        
+        <button id="mode-toggle" class="interactive" style="display:none;">🔓 MOVER OBRA</button>
 
-    <div id="ui-container">
-        <div id="controls">
-            <label>Tamanho: <span id="scale-val">10%</span></label>
-            <input type="range" id="scale-slider" min="0.05" max="1.0" step="0.05" value="0.1">
+        <div id="adjust-panel">
+            <div class="control-box interactive">
+                <span class="label-rot">GIRAR:</span>
+                <input type="range" id="rot-slider" min="0" max="6.28" step="0.05" value="0">
+                <div style="font-size:10px; color:#aaa; margin-top:5px;">Arraste na tela para Mover</div>
+            </div>
+        </div>
+
+        <div id="prop-card" class="interactive">
+            <button class="close-prop" onclick="deselect()">×</button>
+            <div class="prop-title" id="p-name">VIGA V1</div>
+            <div class="prop-detail" id="p-profile">W 200x15.5</div>
+            <div class="prop-meta">
+                <div>Comprimento: <span id="p-len" style="color:#fff">5000mm</span></div>
+                <div>Status: <span id="p-status" style="color:#fff">MONTAGEM</span></div>
+            </div>
         </div>
     </div>
 
@@ -53,11 +90,30 @@
     <script type="module">
         import * as THREE from 'three';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let container;
-        let camera, scene, renderer, controls;
-        let shedGroup;
+        let camera, scene, renderer;
+        let controller;
+        let reticle; // Mira para posicionamento inicial
+        
+        let shedGroup; // Grupo principal da obra
+        let hitTestSource = null;
+        let hitTestSourceRequested = false;
+
+        // ESTADOS DA APP
+        let isPlaced = false; // Se a obra já foi colocada no chão
+        let isMoveMode = false; // Se estamos no modo de ajuste
+        let selectedMesh = null; // Peça selecionada atualmente
+
+        // RAYCASTER (Para clicar nas peças)
+        const raycaster = new THREE.Raycaster();
+        const tempMatrix = new THREE.Matrix4(); // Auxiliar para matemática
+
+        // ELEMENTOS DOM
+        const btnMode = document.getElementById('mode-toggle');
+        const panelAdjust = document.getElementById('adjust-panel');
+        const cardProp = document.getElementById('prop-card');
+        const msgInfo = document.getElementById('info-msg');
 
         init();
         animate();
@@ -67,24 +123,17 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-            // Fundo AZUL ESCURO para saber que carregou
-            scene.background = new THREE.Color(0x1e272e);
 
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
-            camera.position.set(3, 3, 5); // Câmera afastada e elevada
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Luzes Fortes
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
-            hemiLight.position.set(0, 20, 0);
+            // LUZES
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            hemiLight.position.set(0.5, 1, 0.25);
             scene.add(hemiLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-            dirLight.position.set(5, 10, 7);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+            dirLight.position.set(0, 10, 5);
             scene.add(dirLight);
-
-            // Grid no chão para referência
-            const gridHelper = new THREE.GridHelper(10, 10);
-            scene.add(gridHelper);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -93,64 +142,77 @@
             container.appendChild(renderer.domElement);
 
             // BOTÃO AR
-            const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } });
-            arBtn.style.bottom = "120px"; // Levanta o botão para não ficar embaixo do slider
-            arBtn.style.padding = "15px 30px";
-            arBtn.style.fontWeight = "bold";
-            arBtn.style.backgroundColor = "white";
-            arBtn.style.color = "black";
+            const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] });
             document.body.appendChild(arBtn);
 
-            arBtn.addEventListener('click', () => {
-                // Quando entrar no AR:
-                scene.background = null; // Fundo transparente (câmera real)
-                gridHelper.visible = false; // Esconde o grid
-                shedGroup.position.set(0, -1, -2); // Joga 2 metros pra frente
-                shedGroup.scale.set(0.1, 0.1, 0.1); // Começa pequeno
-                controls.autoRotate = false; // Para de girar
-            });
+            // CONTROLADOR (O toque na tela)
+            controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onSelect); // Evento de toque
+            scene.add(controller);
 
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.autoRotate = true; // GIRA SOZINHO PARA VOCÊ VER
-            controls.target.set(0, 1, 0);
+            // RETÍCULA (A mira no chão)
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0xffffff }) // Mira branca inicialmente
+            );
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
 
+            // CRIA A OBRA (Mas deixa invisível até posicionar)
             buildShed();
+            shedGroup.visible = false;
 
-            // Slider de Escala
-            const slider = document.getElementById('scale-slider');
-            const label = document.getElementById('scale-val');
-            slider.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                if(shedGroup) shedGroup.scale.set(val, val, val);
-                label.innerText = `${(val*100).toFixed(0)}%`;
+            // EVENTOS DE UI
+            btnMode.addEventListener('click', toggleMoveMode);
+            
+            document.getElementById('rot-slider').addEventListener('input', (e) => {
+                if(shedGroup) shedGroup.rotation.y = parseFloat(e.target.value);
             });
-            shedGroup.scale.set(0.1, 0.1, 0.1); // Inicia escala 10%
+
+            // Torna a função deselect global para o botão HTML chamar
+            window.deselect = deselectPart;
 
             window.addEventListener('resize', onWindowResize);
         }
 
+        // --- CONSTRUÇÃO DO GALPÃO COM DADOS BIM ---
         function buildShed() {
             shedGroup = new THREE.Group();
             scene.add(shedGroup);
 
-            // Cria um cubo central vermelho para referência (se não vir o galpão, verá isso)
-            const boxGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const boxMat = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
-            const centerBox = new THREE.Mesh(boxGeo, boxMat);
-            centerBox.position.y = 0.25;
-            shedGroup.add(centerBox);
-
-            // Algoritmo do Galpão
+            // Parâmetros
             const numBays = 3; const bayLen = 5.0; const shedW = 10.0; const colH = 4.0; const roofH = 1.5;
             const halfSpan = shedW / 2; const roofAngle = Math.atan2(roofH, halfSpan); const rafterLen = Math.sqrt(halfSpan**2 + roofH**2);
 
-            const createPart = (w, h, d, x, y, z, rotZ, color) => {
+            // Função Helper Inteligente
+            const createPart = (type, name, w, h, d, x, y, z, rotZ, color, status) => {
                 const geometry = new THREE.BoxGeometry(w, h, d);
                 const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.2 });
                 const mesh = new THREE.Mesh(geometry, material);
+                
+                // Posição (Centralizando o galpão no X e Z)
                 mesh.position.set(x - shedW/2, y, z - (numBays*bayLen)/2);
                 if (rotZ) mesh.rotation.z = rotZ;
+                
+                // *** DADOS BIM (METADATA) ***
+                // Geramos um nome de perfil baseado nas medidas
+                let perfil = "Chapa";
+                const mmW = (w*1000).toFixed(0); const mmH = (h*1000).toFixed(0); const mmD = (d*1000).toFixed(0);
+                
+                if(type === 'PILAR') perfil = `W ${mmW}x${mmD}`;
+                else if(type === 'VIGA') perfil = `I ${mmW}x${mmH}`; // Viga usa largura visual
+                else if(type === 'TERCA') perfil = `U ${mmW}x${mmH}`;
+                
+                // Salva dentro da peça
+                mesh.userData = {
+                    name: name,
+                    profile: perfil,
+                    length: (type === 'TERCA' ? d : (type === 'PILAR' ? h : w) * 1000).toFixed(0) + 'mm',
+                    status: status,
+                    originalColor: color // Para restaurar ao deselecionar
+                };
+
                 shedGroup.add(mesh);
             };
 
@@ -158,21 +220,118 @@
 
             for (let i = 0; i <= numBays; i++) {
                 const z = i * bayLen;
-                createPart(0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE);
-                createPart(0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE);
-                createPart(0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR);
-                createPart(0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR);
+                const s = (i===0 || i===numBays) ? 'MONTAGEM' : 'PINTURA'; // Exemplo de status
+                
+                // Pilares
+                createPart('PILAR', `Pilar P${i+1}E`, 0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR, s);
+                createPart('PILAR', `Pilar P${i+1}D`, 0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR, s);
+                
+                // Vigas
                 const rX = halfSpan / 2; const rY = colH + (roofH / 2);
-                createPart(rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA);
-                createPart(rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA);
+                createPart('VIGA', `Viga V${i+1}E`, rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA, 'CORTE');
+                createPart('VIGA', `Viga V${i+1}D`, rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA, 'CORTE');
             }
 
             const purlinPositions = [0.0, 1.25, 2.5, 3.75, 5.0]; const totalLen = numBays * bayLen;
-            purlinPositions.forEach((xOff) => {
+            purlinPositions.forEach((xOff, idx) => {
                 let hY = colH + (xOff * Math.tan(roofAngle)) + 0.15;
-                createPart(0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA);
-                createPart(0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA);
+                createPart('TERCA', `Terça L${idx+1}`, 0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA, 'EXPEDICAO');
+                createPart('TERCA', `Terça L${idx+1}`, 0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA, 'EXPEDICAO');
             });
+        }
+
+        // --- LÓGICA DE INTERAÇÃO (TOQUE NA TELA) ---
+        function onSelect() {
+            // Cenário 1: Obra ainda não posicionada -> Posiciona onde a mira está
+            if (!isPlaced) {
+                if (reticle.visible) {
+                    shedGroup.position.setFromMatrixPosition(reticle.matrix);
+                    shedGroup.visible = true;
+                    isPlaced = true;
+                    
+                    // Mostra botões de controle
+                    btnMode.style.display = 'block';
+                    msgInfo.innerText = "Toque em uma peça para ver detalhes";
+                    
+                    // Esconde a mira, não precisamos mais dela por enquanto
+                    reticle.visible = false; 
+                }
+                return;
+            }
+
+            // Cenário 2: Modo de Ajuste (Mover Obra) -> Move para onde clicou
+            if (isMoveMode) {
+                if (reticle.visible) {
+                    // Move a obra para a nova posição da mira (mantendo a rotação Y atual)
+                    const currentRot = shedGroup.rotation.y;
+                    shedGroup.position.setFromMatrixPosition(reticle.matrix);
+                    shedGroup.rotation.y = currentRot;
+                }
+                return;
+            }
+
+            // Cenário 3: Modo Normal -> Selecionar Peça (Raycast)
+            // Cria um raio a partir da posição do controlador (celular)
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            const intersects = raycaster.intersectObjects(shedGroup.children);
+
+            if (intersects.length > 0) {
+                selectPart(intersects[0].object);
+            } else {
+                deselectPart(); // Clicou no vazio, deseleciona
+            }
+        }
+
+        function selectPart(mesh) {
+            // Se já tem um selecionado, restaura a cor dele
+            if (selectedMesh) {
+                selectedMesh.material.color.setHex(selectedMesh.userData.originalColor);
+                selectedMesh.material.emissive.setHex(0x000000);
+            }
+
+            selectedMesh = mesh;
+            
+            // Highlight (Amarelo Neon)
+            mesh.material.color.setHex(0xffff00);
+            mesh.material.emissive.setHex(0x333300);
+
+            // Preenche e Mostra Card
+            document.getElementById('p-name').innerText = mesh.userData.name;
+            document.getElementById('p-profile').innerText = mesh.userData.profile;
+            document.getElementById('p-len').innerText = mesh.userData.length;
+            document.getElementById('p-status').innerText = mesh.userData.status;
+            
+            cardProp.style.display = 'block';
+        }
+
+        function deselectPart() {
+            if (selectedMesh) {
+                selectedMesh.material.color.setHex(selectedMesh.userData.originalColor);
+                selectedMesh.material.emissive.setHex(0x000000);
+                selectedMesh = null;
+            }
+            cardProp.style.display = 'none';
+        }
+
+        function toggleMoveMode() {
+            isMoveMode = !isMoveMode;
+            if(isMoveMode) {
+                btnMode.innerText = "🔒 TRAVAR POSIÇÃO";
+                btnMode.classList.add('active');
+                panelAdjust.style.display = 'block';
+                msgInfo.innerText = "Arraste no chão para mover. Use o slider para girar.";
+                reticle.visible = true; // Mostra mira para reposicionar
+                deselectPart(); // Fecha popup se tiver aberto
+            } else {
+                btnMode.innerText = "🔓 MOVER OBRA";
+                btnMode.classList.remove('active');
+                panelAdjust.style.display = 'none';
+                msgInfo.innerText = "Toque em uma peça para ver detalhes";
+                reticle.visible = false;
+            }
         }
 
         function onWindowResize() {
@@ -185,8 +344,41 @@
             renderer.setAnimationLoop(render);
         }
 
-        function render() {
-            if(controls) controls.update();
+        function render(timestamp, frame) {
+            // Lógica do WebXR Hit Test (Detectar chão)
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                const session = renderer.xr.getSession();
+
+                if (hitTestSourceRequested === false) {
+                    session.requestReferenceSpace('viewer').then(function (referenceSpace) {
+                        session.requestHitTestSource({ space: referenceSpace }).then(function (source) {
+                            hitTestSource = source;
+                        });
+                    });
+
+                    session.addEventListener('end', function () {
+                        hitTestSourceRequested = false;
+                        hitTestSource = null;
+                    });
+
+                    hitTestSourceRequested = true;
+                }
+
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+                    // Só mostra a mira se não tivermos colocado a obra, OU se estivermos movendo ela
+                    if (hitTestResults.length > 0 && (!isPlaced || isMoveMode)) {
+                        const hit = hitTestResults[0];
+                        reticle.visible = true;
+                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
+                    } else {
+                        reticle.visible = false;
+                    }
+                }
+            }
+
             renderer.render(scene, camera);
         }
     </script>
