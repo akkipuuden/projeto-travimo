@@ -2,21 +2,47 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Galpão em Realidade Aumentada</title>
+    <title>Galpão AR - Travimo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #333; font-family: sans-serif; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #222; font-family: 'Segoe UI', sans-serif; }
+        
+        #ui-container {
+            position: absolute; bottom: 20px; width: 100%; text-align: center; z-index: 100;
+            pointer-events: none; /* Deixa clicar no botão AR */
+        }
+
+        #controls {
+            background: rgba(0,0,0,0.6); padding: 15px; border-radius: 20px;
+            display: inline-block; pointer-events: auto; /* Reativa cliques */
+            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        label { color: white; font-size: 14px; display: block; margin-bottom: 5px; font-weight: bold; }
+        
+        input[type=range] {
+            width: 200px; accent-color: #00b894;
+        }
+
+        #scale-val { color: #00b894; font-weight: bold; margin-left: 5px; }
+
         #info {
-            position: absolute; top: 10px; width: 100%; text-align: center; z-index: 100;
-            color: white; padding: 10px; background: rgba(0,0,0,0.5); pointer-events: none;
+            position: absolute; top: 10px; width: 100%; text-align: center; color: rgba(255,255,255,0.7); 
+            font-size: 12px; pointer-events: none;
         }
     </style>
 </head>
 <body>
 
     <div id="info">
-        <h3>Galpão Industrial (Escala 1:1)</h3>
-        <p>Aponte para o chão e toque em "Start AR".<br>O galpão aparecerá 2 metros à sua frente.</p>
+        Galpão Industrial - Travimo AR<br>Aponte para o chão e inicie
+    </div>
+
+    <div id="ui-container">
+        <div id="controls">
+            <label>Tamanho da Obra: <span id="scale-val">10% (Mesa)</span></label>
+            <input type="range" id="scale-slider" min="0.05" max="1.0" step="0.05" value="0.1">
+        </div>
     </div>
 
     <script type="importmap">
@@ -34,7 +60,7 @@
 
         let container;
         let camera, scene, renderer;
-        let controller;
+        let shedGroup; // Grupo para controlar a escala
 
         init();
         animate();
@@ -43,123 +69,91 @@
             container = document.createElement('div');
             document.body.appendChild(container);
 
-            // 1. CENA
             scene = new THREE.Scene();
 
-            // 2. CÂMERA
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
 
-            // 3. LUZ (Essencial para ver profundidade)
-            const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            // Luzes
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
             hemisphereLight.position.set(0.5, 1, 0.25);
             scene.add(hemisphereLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 3); // Luz forte do sol
+            const dirLight = new THREE.DirectionalLight(0xffffff, 3);
             dirLight.position.set(0, 10, 5);
             scene.add(dirLight);
 
-            // 4. RENDERIZADOR
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; // Ativa WebXR
+            renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // 5. BOTÃO AR (Gerencia a sessão de câmera)
-            document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+            document.body.appendChild(ARButton.createButton(renderer));
 
-            // 6. GERAÇÃO DO GALPÃO (Algoritmo portado do seu sistema)
+            // --- CONSTRUÇÃO ---
             buildShed();
 
-            // Eventos de redimensionamento
+            // --- CONTROLE DE ESCALA ---
+            const slider = document.getElementById('scale-slider');
+            const label = document.getElementById('scale-val');
+            
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                // Atualiza o tamanho do galpão
+                if(shedGroup) shedGroup.scale.set(val, val, val);
+                
+                // Atualiza o texto
+                if(val >= 1.0) label.innerText = "100% (Tamanho Real)";
+                else if (val <= 0.1) label.innerText = `${(val*100).toFixed(0)}% (Mesa)`;
+                else label.innerText = `${(val*100).toFixed(0)}%`;
+            });
+
+            // Seta escala inicial (10% - Mesa)
+            shedGroup.scale.set(0.1, 0.1, 0.1);
+
             window.addEventListener('resize', onWindowResize);
         }
 
         function buildShed() {
-            // Grupo principal para podermos mover o galpão inteiro
-            const shedGroup = new THREE.Group();
-            
-            // Posiciona o galpão 3 metros na frente da câmera (Z = -3) e no chão (Y = 0)
-            shedGroup.position.set(0, 0, -3); 
-            
-            // Rotaciona um pouco para ver em perspectiva
-            // shedGroup.rotation.y = Math.PI / 4; 
-
+            shedGroup = new THREE.Group();
+            // Posição inicial: 1 metro pra frente, no chão
+            shedGroup.position.set(0, 0, -1); 
             scene.add(shedGroup);
 
-            // --- ALGORITMO DE CONSTRUÇÃO (Baseado no DemoProject) ---
-            // Unidades em METROS (Three.js e WebXR usam metros por padrão)
-            
-            const numBays = 3; 
-            const bayLen = 5.0; // Distância entre pórticos
-            const shedW = 10.0; // Largura do galpão
-            const colH = 4.0;   // Altura do pilar (reduzi um pouco para caber melhor na tela)
-            const roofH = 1.5;  // Altura da cumeeira
+            // Algoritmo do Galpão
+            const numBays = 3; const bayLen = 5.0; const shedW = 10.0; const colH = 4.0; const roofH = 1.5;
+            const halfSpan = shedW / 2; const roofAngle = Math.atan2(roofH, halfSpan); const rafterLen = Math.sqrt(halfSpan**2 + roofH**2);
 
-            const halfSpan = shedW / 2;
-            const roofAngle = Math.atan2(roofH, halfSpan);
-            const rafterLen = Math.sqrt(halfSpan**2 + roofH**2);
-
-            // Função auxiliar para criar peças
-            const createPart = (name, w, h, d, x, y, z, rotZ, color) => {
+            const createPart = (w, h, d, x, y, z, rotZ, color) => {
                 const geometry = new THREE.BoxGeometry(w, h, d);
                 const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.2 });
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(x, y, z);
                 if (rotZ) mesh.rotation.z = rotZ;
-                
-                // Sombra (Opcional para realismo)
-                // mesh.castShadow = true; 
-                
                 shedGroup.add(mesh);
             };
 
-            // CORES
-            const C_PILAR = 0x0984e3; // Azul
-            const C_VIGA = 0xe17055;  // Laranja
-            const C_TERCA = 0x636e72; // Cinza
-            const C_BASE = 0x2d3436;  // Preto
+            const C_PILAR = 0x0984e3; const C_VIGA = 0xe17055; const C_TERCA = 0x636e72; const C_BASE = 0x2d3436;
 
-            // LOOP DE GERAÇÃO (Pórticos)
             for (let i = 0; i <= numBays; i++) {
-                const z = i * bayLen; // Posição em profundidade
-
+                const z = i * bayLen;
                 // Bases
-                createPart("Base", 0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE);
-                createPart("Base", 0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE);
-
-                // Pilares (Esq e Dir)
-                createPart("Pilar", 0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR);
-                createPart("Pilar", 0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR);
-
-                // Vigas (Tesoura)
-                const rX = halfSpan / 2;
-                const rY = colH + (roofH / 2);
-                // Viga Esq
-                createPart("Viga", rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA);
-                // Viga Dir
-                createPart("Viga", rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA);
+                createPart(0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE);
+                createPart(0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE);
+                // Pilares
+                createPart(0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR);
+                createPart(0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR);
+                // Vigas
+                const rX = halfSpan / 2; const rY = colH + (roofH / 2);
+                createPart(rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA);
+                createPart(rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA);
             }
 
-            // LOOP DE TERÇAS (Conectando os pórticos)
-            const purlinPositions = [0.0, 1.25, 2.5, 3.75, 5.0]; // Posições relativas na meia-água
-            const totalLen = numBays * bayLen; // Comprimento total do galpão (15m)
-
-            purlinPositions.forEach((xOff) => { // xOff é distância horizontal do centro para a borda
-                // A geometria das terças é complexa no telhado inclinado, 
-                // aqui faremos uma simplificação visual:
-                
-                // Altura da terça nesse ponto X
-                // (Começando da ponta do pilar subindo até a cumeeira)
-                // A ponta está em x=0 (altura colH). A cumeeira em x=5 (altura colH+roofH)
-                // Vamos calcular baseando na borda (x=0) indo para o meio (x=5)
-                
-                // Lado Esquerdo
+            const purlinPositions = [0.0, 1.25, 2.5, 3.75, 5.0]; const totalLen = numBays * bayLen;
+            purlinPositions.forEach((xOff) => {
                 let hY = colH + (xOff * Math.tan(roofAngle)) + 0.15;
-                createPart("Terca", 0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA);
-
-                // Lado Direito
-                createPart("Terca", 0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA);
+                createPart(0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA);
+                createPart(0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA);
             });
         }
 
@@ -176,7 +170,6 @@
         function render() {
             renderer.render(scene, camera);
         }
-
     </script>
 </body>
 </html>
