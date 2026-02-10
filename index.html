@@ -2,42 +2,104 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Galpão AR</title>
+    <title>Galpão AR - Travimo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
         
-        #ui-container {
-            position: absolute; bottom: 30px; width: 100%; text-align: center; z-index: 100;
-            pointer-events: none;
+        /* --- UI PRINCIPAL --- */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* Deixa passar cliques para o 3D */
+            display: flex; flex-direction: column; justify-content: space-between;
         }
 
-        #controls {
-            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 20px;
-            display: inline-block; pointer-events: auto;
-            border: 1px solid white;
-        }
+        .interactive { pointer-events: auto; }
 
-        label { color: #00b894; font-size: 16px; display: block; margin-bottom: 10px; font-weight: bold; }
-        input[type=range] { width: 200px; height: 20px; }
-
-        #info {
-            position: absolute; top: 0; width: 100%; padding: 10px;
-            background: rgba(0,0,0,0.5); color: white; text-align: center; font-size: 14px;
+        /* MENSAGENS E BOTÕES */
+        #top-bar {
+            padding: 20px; text-align: center;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
         }
+        #info-msg { color: rgba(255,255,255,0.9); font-size: 14px; text-shadow: 1px 1px 2px black; margin-bottom: 10px; }
+        
+        #btn-adjust {
+            background: rgba(255, 255, 255, 0.2); border: 1px solid white; color: white;
+            padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold;
+            backdrop-filter: blur(5px); cursor: pointer;
+        }
+        #btn-adjust.active { background: #e17055; border-color: #e17055; }
+
+        /* PAINEL DE CONTROLE (GIRAR/ESCALA) */
+        #controls-panel {
+            margin-bottom: 40px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px;
+        }
+        .control-group {
+            background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 30px;
+            border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; gap: 10px;
+        }
+        label { color: #00b894; font-size: 12px; font-weight: bold; }
+        input[type=range] { width: 150px; accent-color: #00b894; }
+        
+        /* CARD DE PROPRIEDADES (BIM) */
+        #bim-card {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px;
+            background: rgba(15, 23, 42, 0.95); border-left: 5px solid #00b894;
+            border-radius: 8px; padding: 15px; box-sizing: border-box;
+            display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: left; margin-bottom: 100px; /* Espaço para botão AR */
+        }
+        .bim-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+        .bim-title { color: white; font-size: 18px; font-weight: bold; }
+        .bim-close { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; }
+        
+        .bim-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; }
+        .bim-label { color: #94a3b8; }
+        .bim-val { color: #fff; font-weight: bold; font-family: monospace; }
+        .bim-highlight { color: #00b894; font-size: 15px; }
+
+        /* Esconde controles específicos inicialmente */
+        #rot-control { display: none; }
     </style>
 </head>
 <body>
 
-    <div id="info">
-        1. Se ver o galpão girando, clique em <b>START AR</b> lá embaixo.<br>
-        2. No iPhone (WebXR Viewer), aponte para o chão.
-    </div>
+    <div id="ui-layer">
+        <div id="top-bar">
+            <div id="info-msg">Aponte para o chão e clique em START AR</div>
+            <button id="btn-adjust" class="interactive">🔓 AJUSTAR / MOVER</button>
+        </div>
 
-    <div id="ui-container">
-        <div id="controls">
-            <label>Tamanho: <span id="scale-val">10%</span></label>
-            <input type="range" id="scale-slider" min="0.05" max="1.0" step="0.05" value="0.1">
+        <div id="bim-card" class="interactive">
+            <div class="bim-header">
+                <div>
+                    <div class="bim-title" id="p-name">PILAR P1</div>
+                    <div class="bim-val bim-highlight" id="p-profile">W 200x15.5</div>
+                </div>
+                <button class="bim-close" onclick="deselectPart()">×</button>
+            </div>
+            <div class="bim-row">
+                <span class="bim-label">Comprimento:</span>
+                <span class="bim-val" id="p-len">5000mm</span>
+            </div>
+            <div class="bim-row">
+                <span class="bim-label">Status:</span>
+                <span class="bim-val" id="p-status" style="color:#fdcb6e">MONTAGEM</span>
+            </div>
+        </div>
+
+        <div id="controls-panel" class="interactive">
+            <div id="rot-control" class="control-group">
+                <label>GIRAR:</label>
+                <input type="range" id="rot-slider" min="0" max="6.28" step="0.05" value="0">
+            </div>
+
+            <div class="control-group">
+                <label>ESCALA:</label>
+                <input type="range" id="scale-slider" min="0.05" max="1.0" step="0.05" value="0.1">
+                <span id="scale-txt" style="color:white; font-size:10px; width:40px;">10%</span>
+            </div>
         </div>
     </div>
 
@@ -57,7 +119,27 @@
 
         let container;
         let camera, scene, renderer, controls;
-        let shedGroup;
+        let controller; // Controlador AR (Toque)
+        let reticle;    // Mira no chão
+        let shedGroup;  // O Galpão inteiro
+        
+        // Estados
+        let hitTestSource = null;
+        let hitTestSourceRequested = false;
+        let isPlaced = false;      // Obra já foi posicionada?
+        let isAdjusting = false;   // Modo de ajuste ativado?
+        let selectedMesh = null;   // Peça selecionada
+
+        // Raycaster para seleção
+        const raycaster = new THREE.Raycaster();
+        const tempMatrix = new THREE.Matrix4();
+        const mouse = new THREE.Vector2(); // Para fallback no PC
+
+        // UI Elements
+        const uiInfo = document.getElementById('info-msg');
+        const btnAdjust = document.getElementById('btn-adjust');
+        const rotControl = document.getElementById('rot-control');
+        const cardBim = document.getElementById('bim-card');
 
         init();
         animate();
@@ -67,22 +149,18 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-            // Fundo AZUL ESCURO para saber que carregou
-            scene.background = new THREE.Color(0x1e272e);
+            scene.background = new THREE.Color(0x1e272e); // Fundo escuro (PC/iPhone Viewer)
 
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
-            camera.position.set(3, 3, 5); // Câmera afastada e elevada
+            camera.position.set(2, 4, 6);
 
-            // Luzes Fortes
+            // Luzes
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
-            hemiLight.position.set(0, 20, 0);
-            scene.add(hemiLight);
-
+            hemiLight.position.set(0, 20, 0); scene.add(hemiLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-            dirLight.position.set(5, 10, 7);
-            scene.add(dirLight);
+            dirLight.position.set(5, 10, 7); scene.add(dirLight);
 
-            // Grid no chão para referência
+            // Grid para referência visual antes do AR
             const gridHelper = new THREE.GridHelper(10, 10);
             scene.add(gridHelper);
 
@@ -92,86 +170,225 @@
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // BOTÃO AR
-            const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } });
-            arBtn.style.bottom = "120px"; // Levanta o botão para não ficar embaixo do slider
-            arBtn.style.padding = "15px 30px";
-            arBtn.style.fontWeight = "bold";
-            arBtn.style.backgroundColor = "white";
-            arBtn.style.color = "black";
+            // --- CONFIGURAÇÃO AR ---
+            const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.getElementById('ui-layer') } });
+            arBtn.style.bottom = "80px"; // Ajusta posição para não cobrir slider
             document.body.appendChild(arBtn);
 
             arBtn.addEventListener('click', () => {
-                // Quando entrar no AR:
-                scene.background = null; // Fundo transparente (câmera real)
-                gridHelper.visible = false; // Esconde o grid
-                shedGroup.position.set(0, -1, -2); // Joga 2 metros pra frente
-                shedGroup.scale.set(0.1, 0.1, 0.1); // Começa pequeno
-                controls.autoRotate = false; // Para de girar
+                scene.background = null; // Remove fundo
+                gridHelper.visible = false;
+                if(!isPlaced) {
+                    uiInfo.innerText = "Aponte para o chão e toque para posicionar";
+                    shedGroup.visible = false; // Esconde até posicionar
+                }
             });
 
+            // Controlador de Toque (AR)
+            controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onSelectAR);
+            scene.add(controller);
+
+            // Mira (Reticle)
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0xffffff })
+            );
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
+
+            // Controles de Órbita (PC/iPhone Viewer sem AR nativo)
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.autoRotate = true; // GIRA SOZINHO PARA VOCÊ VER
             controls.target.set(0, 1, 0);
 
+            // --- CONSTRUÇÃO ---
             buildShed();
 
-            // Slider de Escala
-            const slider = document.getElementById('scale-slider');
-            const label = document.getElementById('scale-val');
-            slider.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                if(shedGroup) shedGroup.scale.set(val, val, val);
-                label.innerText = `${(val*100).toFixed(0)}%`;
-            });
-            shedGroup.scale.set(0.1, 0.1, 0.1); // Inicia escala 10%
+            // Eventos de UI
+            setupUI();
 
+            // Evento de Clique (Mouse/PC)
+            window.addEventListener('click', onSelectPC);
             window.addEventListener('resize', onWindowResize);
+            
+            // Torna global para o botão HTML fechar
+            window.deselectPart = deselectPart;
         }
 
         function buildShed() {
             shedGroup = new THREE.Group();
             scene.add(shedGroup);
 
-            // Cria um cubo central vermelho para referência (se não vir o galpão, verá isso)
-            const boxGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const boxMat = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
-            const centerBox = new THREE.Mesh(boxGeo, boxMat);
-            centerBox.position.y = 0.25;
-            shedGroup.add(centerBox);
-
-            // Algoritmo do Galpão
+            // Parâmetros do Galpão
             const numBays = 3; const bayLen = 5.0; const shedW = 10.0; const colH = 4.0; const roofH = 1.5;
             const halfSpan = shedW / 2; const roofAngle = Math.atan2(roofH, halfSpan); const rafterLen = Math.sqrt(halfSpan**2 + roofH**2);
 
-            const createPart = (w, h, d, x, y, z, rotZ, color) => {
+            const createPart = (type, name, w, h, d, x, y, z, rotZ, color, status) => {
                 const geometry = new THREE.BoxGeometry(w, h, d);
                 const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.2 });
                 const mesh = new THREE.Mesh(geometry, material);
+                
+                // Centraliza no grupo
                 mesh.position.set(x - shedW/2, y, z - (numBays*bayLen)/2);
                 if (rotZ) mesh.rotation.z = rotZ;
+                
+                // --- METADATA INTELIGENTE (BIM) ---
+                let profileName = "Chapa";
+                const mmW=(w*1000).toFixed(0), mmH=(h*1000).toFixed(0), mmD=(d*1000).toFixed(0);
+                
+                if(type === 'PILAR') profileName = `W ${mmW}x${mmD}`;
+                else if(type === 'VIGA') profileName = `I ${mmW}x${mmH}`; // Viga usa altura visual como 'H'
+                else if(type === 'TERCA') profileName = `U ${mmW}x${mmH}`;
+                else if(type === 'BASE') profileName = `CHAPA ${mmW}x${mmD}`;
+
+                mesh.userData = {
+                    name: name,
+                    profile: profileName,
+                    length: (type === 'TERCA' ? d : (type === 'PILAR' ? h : w) * 1000).toFixed(0) + 'mm',
+                    status: status,
+                    originalColor: color
+                };
+
                 shedGroup.add(mesh);
             };
 
-            const C_PILAR = 0x0984e3; const C_VIGA = 0xe17055; const C_TERCA = 0x636e72; const C_BASE = 0x2d3436;
+            const C_PILAR=0x0984e3; const C_VIGA=0xe17055; const C_TERCA=0x636e72; const C_BASE=0x2d3436;
 
             for (let i = 0; i <= numBays; i++) {
                 const z = i * bayLen;
-                createPart(0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE);
-                createPart(0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE);
-                createPart(0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR);
-                createPart(0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR);
-                const rX = halfSpan / 2; const rY = colH + (roofH / 2);
-                createPart(rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA);
-                createPart(rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA);
+                const st = (i===0 || i===numBays) ? 'MONTAGEM' : 'PINTURA';
+                
+                createPart('BASE', `Base B${i+1}E`, 0.4, 0.05, 0.4, 0, 0.025, z, 0, C_BASE, 'FINALIZADO');
+                createPart('BASE', `Base B${i+1}D`, 0.4, 0.05, 0.4, shedW, 0.025, z, 0, C_BASE, 'FINALIZADO');
+                
+                createPart('PILAR', `Pilar P${i+1}E`, 0.2, colH, 0.2, 0, colH/2, z, 0, C_PILAR, st);
+                createPart('PILAR', `Pilar P${i+1}D`, 0.2, colH, 0.2, shedW, colH/2, z, 0, C_PILAR, st);
+                
+                const rX = halfSpan/2; const rY = colH + (roofH/2);
+                createPart('VIGA', `Viga V${i+1}E`, rafterLen, 0.25, 0.1, rX, rY, z, roofAngle, C_VIGA, 'CORTE');
+                createPart('VIGA', `Viga V${i+1}D`, rafterLen, 0.25, 0.1, shedW - rX, rY, z, -roofAngle, C_VIGA, 'CORTE');
             }
 
-            const purlinPositions = [0.0, 1.25, 2.5, 3.75, 5.0]; const totalLen = numBays * bayLen;
-            purlinPositions.forEach((xOff) => {
+            const purlinPos = [0.0, 1.25, 2.5, 3.75, 5.0]; const totalLen = numBays * bayLen;
+            purlinPos.forEach((xOff, idx) => {
                 let hY = colH + (xOff * Math.tan(roofAngle)) + 0.15;
-                createPart(0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA);
-                createPart(0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA);
+                createPart('TERCA', `Terça L${idx+1}`, 0.1, 0.05, totalLen, xOff, hY, totalLen/2, roofAngle, C_TERCA, 'EXPEDICAO');
+                createPart('TERCA', `Terça L${idx+1}`, 0.1, 0.05, totalLen, shedW - xOff, hY, totalLen/2, -roofAngle, C_TERCA, 'EXPEDICAO');
+            });
+
+            // Escala inicial
+            shedGroup.scale.set(0.1, 0.1, 0.1);
+        }
+
+        // --- LÓGICA DE INTERAÇÃO AR ---
+        function onSelectAR() {
+            // Se estivermos em modo AJUSTE ou ainda NÃO POSICIONADO
+            if (reticle.visible && (isAdjusting || !isPlaced)) {
+                // Posiciona a obra onde está a mira
+                const currentRot = shedGroup.rotation.y; // Mantém rotação atual
+                shedGroup.position.setFromMatrixPosition(reticle.matrix);
+                shedGroup.rotation.y = currentRot;
+                shedGroup.visible = true;
+                
+                isPlaced = true;
+                
+                // Se for o primeiro posicionamento, sai do modo ajuste auto
+                if (!isAdjusting) {
+                    uiInfo.innerText = "Toque em uma peça para ver detalhes";
+                }
+                return;
+            }
+
+            // Seleção de Peça (Raycast do Controle)
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            checkIntersection();
+        }
+
+        // --- LÓGICA DE INTERAÇÃO MOUSE (PC/Fallback) ---
+        function onSelectPC(event) {
+            // Se estiver em AR, ignora clique de mouse (usa o controller)
+            if(renderer.xr.isPresenting) return;
+            if(event.target.closest('.interactive')) return; // Ignora cliques na UI
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            checkIntersection();
+        }
+
+        function checkIntersection() {
+            // Se estiver ajustando, não seleciona peças
+            if(isAdjusting) return;
+
+            const intersects = raycaster.intersectObjects(shedGroup.children);
+            if (intersects.length > 0) {
+                selectPart(intersects[0].object);
+            } else {
+                deselectPart();
+            }
+        }
+
+        function selectPart(mesh) {
+            if(selectedMesh) {
+                selectedMesh.material.color.setHex(selectedMesh.userData.originalColor);
+                selectedMesh.material.emissive.setHex(0x000000);
+            }
+            selectedMesh = mesh;
+            // Highlight Amarelo
+            mesh.material.color.setHex(0xffff00);
+            mesh.material.emissive.setHex(0x333300);
+
+            // Preenche Card
+            document.getElementById('p-name').innerText = mesh.userData.name;
+            document.getElementById('p-profile').innerText = mesh.userData.profile;
+            document.getElementById('p-len').innerText = mesh.userData.length;
+            document.getElementById('p-status').innerText = mesh.userData.status;
+            
+            cardBim.style.display = 'block';
+        }
+
+        function deselectPart() {
+            if(selectedMesh) {
+                selectedMesh.material.color.setHex(selectedMesh.userData.originalColor);
+                selectedMesh.material.emissive.setHex(0x000000);
+                selectedMesh = null;
+            }
+            cardBim.style.display = 'none';
+        }
+
+        function setupUI() {
+            // Botão Ajustar
+            btnAdjust.addEventListener('click', () => {
+                isAdjusting = !isAdjusting;
+                if(isAdjusting) {
+                    btnAdjust.classList.add('active');
+                    btnAdjust.innerText = "🔒 TRAVAR";
+                    rotControl.style.display = 'flex'; // Mostra slider de giro
+                    uiInfo.innerText = "Toque no chão para mover. Use o slider para girar.";
+                    deselectPart();
+                } else {
+                    btnAdjust.classList.remove('active');
+                    btnAdjust.innerText = "🔓 AJUSTAR / MOVER";
+                    rotControl.style.display = 'none';
+                    uiInfo.innerText = "Toque em uma peça para ver detalhes";
+                }
+            });
+
+            // Sliders
+            document.getElementById('scale-slider').addEventListener('input', (e) => {
+                const v = parseFloat(e.target.value);
+                shedGroup.scale.set(v,v,v);
+                document.getElementById('scale-txt').innerText = v >= 1.0 ? "Real" : `${(v*100).toFixed(0)}%`;
+            });
+
+            document.getElementById('rot-slider').addEventListener('input', (e) => {
+                shedGroup.rotation.y = parseFloat(e.target.value);
             });
         }
 
@@ -185,8 +402,37 @@
             renderer.setAnimationLoop(render);
         }
 
-        function render() {
-            if(controls) controls.update();
+        function render(timestamp, frame) {
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                const session = renderer.xr.getSession();
+
+                if (hitTestSourceRequested === false) {
+                    session.requestReferenceSpace('viewer').then((refSpace) => {
+                        session.requestHitTestSource({ space: refSpace }).then((source) => {
+                            hitTestSource = source;
+                        });
+                    });
+                    session.addEventListener('end', () => { hitTestSourceRequested = false; hitTestSource = null; });
+                    hitTestSourceRequested = true;
+                }
+
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+                    // Mostra mira se: Tiver chão E (Estiver Ajustando OU Ainda não posicionou)
+                    if (hitTestResults.length > 0 && (isAdjusting || !isPlaced)) {
+                        const hit = hitTestResults[0];
+                        reticle.visible = true;
+                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
+                    } else {
+                        reticle.visible = false;
+                    }
+                }
+            } else {
+                // Modo PC: Controla órbita
+                controls.update();
+            }
+
             renderer.render(scene, camera);
         }
     </script>
